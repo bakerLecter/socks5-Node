@@ -14,9 +14,7 @@ function start(){
 	console.log('client connected.');
 	
 	connection.on('data',function(chunk){
-		
 		console.log("--------- data's length: " + chunk.length +"---------");
-
 		var SOCKSVER = chunk[0];
 		var NMETHODS = chunk[1];
 		var METHODS = chunk[2];
@@ -33,13 +31,16 @@ function start(){
 				}
 				
 				if(chunk.length > 3){
-					console.log(chunk);
 					console.log(chunk.length + ' '+ urlslice(chunk));
-					tcp_relay(connection,chunk);
+					try{
+						tcp_relay(connection,chunk);
+					}catch(err){
+						connection.end(err.stack);
+					}
 				}
 				break;
 			default:
-					console.log("NO SUPPORT");
+				console.log("Data Passing");
 		}
 	});
 	
@@ -58,37 +59,43 @@ function tcp_relay(socket, request){
 	var domain = request.toString("utf8",5,request.length-2);
 	var dstPort = parseInt(request.toString("hex",request.length-2),16);
 	
-	dns.lookup(domain,function(err,dstip){
-		if(err){
-			console.log("dns error");
-		}
-		
-		console.log(dstip + ' ' + dstPort);
-		var dstSock = new net.Socket();
-		dstSock.setKeepAlive(false);
-		dstSock.on('connect', function() {
-				 if (socket.writable) {
-					 console.log('dick1');
-				  var localbytes = new Buffer([0x7f,0x00,0x00,0x01]),
-					  len = localbytes.length,
-					  bufrep = new Buffer(10),
-					  p = 4;
-				  bufrep[0] = 0x05;
-				  bufrep[1] = 0x00;
-				  bufrep[2] = 0x00;
-				  bufrep[3] = 0x01;
-				  for (var i = 0; i < len; ++i, ++p)
+	try{
+		dns.lookup(domain,function(err,dstip){
+			if(err){
+				console.log("dns error");
+			}
+			console.log(dstip + ' ' + dstPort);
+			var dstSock = new net.Socket();
+			dstSock.setKeepAlive(false);
+			
+			dstSock.on('connect', function() {
+				if (socket.writable) {
+					var localbytes = new Buffer([0x00,0x00,0x00,0x00]),
+					len = localbytes.length,
+					bufrep = new Buffer(10),
+					p = 4;
+					bufrep[0] = 0x05;
+					bufrep[1] = 0x00;
+					bufrep[2] = 0x00;
+					bufrep[3] = 0x01;
+					for (var i = 0; i < len; ++i, ++p)
 					bufrep[p] = localbytes[i];
-				  bufrep.writeUInt16BE(dstSock.localPort, p, true);
-				  socket.write(bufrep);
-					 console.log('dick2');
-				  socket.pipe(dstSock).pipe(socket);
-				  socket.resume();
-				 } else if (dstSock.writable)
-				  dstSock.end();
+					bufrep.writeUInt16BE(dstSock.localPort, p, true);
+					socket.write(bufrep);
+					socket.pipe(dstSock).pipe(socket);
+					socket.resume();
+					} else if (dstSock.writable){
+							dstSock.end();
+					}
 			   }).connect(dstPort, dstip);
-		socket.dstSock = dstSock;
-	});
+			dstSock.on('error',function(error){
+				console.error(error);
+			});
+		});
+	}catch(err){
+		console.log(err);
+	}
+
 }
 
 exports.start = start;
